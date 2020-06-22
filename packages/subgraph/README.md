@@ -41,56 +41,74 @@ Install the necessary packages:
 yarn global add truffle ganache-cli @graphprotocol/graph-cli
 ```
 
+Start ganache. It's helpful to specify a mnemonic, so you can hard-code the address in `subgraph.yaml` and the test files.
+
+```bash
+ganache-cli -h 0.0.0.0 -m 'deputy taste judge cave mosquito supply hospital clarify argue aware abuse glory'
+```
+
 Download the `graph-node` Docker instance.
 
 ```bash
 git clone https://github.com/graphprotocol/graph-node/
-cd graph-node/docker
 ```
+
+Then navigate to `graph-node/docker`
 
 If on Linux, run the following script.
 
-> Note I had problems here, so you may need to troubleshoot by first running `docker-compose create` or `docker-compose up`. If you get a "version" error, update your docker-compose with [these instructions](https://docs.docker.com/compose/install/). If you get an error like `ERROR: could not find an available, non-overlapping IPv4 address...` then try turning off OpenVPN, or follow [this tutorial](https://stackoverflow.com/questions/45692255/how-make-openvpn-work-with-docker).
+> Note I had problems here. If you get a "version" error, update your docker-compose with [these instructions](https://docs.docker.com/compose/install/). If you get an error like `ERROR: could not find an available, non-overlapping IPv4 address...` then try turning off OpenVPN, or follow [this tutorial](https://stackoverflow.com/questions/45692255/how-make-openvpn-work-with-docker).
 
 ```bash
-sudo apt install jq # if necessary
-./setup.sh
+# For Linux machines
+sudo apt install jq
+./setup.sh # writes the host IP to the docker-compose file
 ```
 
-Now lets start our subgraph Docker instance.
+Now start the necessary subgraph Docker containers.
 
 ```bash
 docker-compose up
-# leave running
+# or to run in background
+docker-compose up -d
+
+# Check its running
+docker logs docker_graph-node_1
 ```
 
 #### Deploy the contracts to Ganache
 
-In a new terminal, navigate to `@rtoken/contracts` and start running ganache-cli and deploy the contracts.
+Now in `rtoken-monorepo` navigate to `packages/contracts`, deploy the contracts, and copy the address for `rTOKEN contract (proxy)`.
 
 ```bash
-ganache-cli -h 0.0.0.0 -m 'deputy taste judge cave mosquito supply hospital clarify argue aware abuse glory'
-# using the same mnemonic allows for hard-coding the address in `subgraph.yaml` and the test files. It's not the best way, but it works!
-
-# Then in a new terminal
+# Install dependencies
+lerna bootstrap
+# Deploy contracts
 truffle test --network subgraph test/subgraphDeployment.test.js
+# Copy the rToken contract address
+> ...
+> The rTOKEN contract (proxy) is deployed at: 0xA0E2aEAd993c21c118324c2BCC214e0f9aCA5796
 ```
 
-Copy the deployed rToken contract address printed at the start of the deployment process. If you used the same mnemonic, then this step isn't necessary
+We also need to build the contracts, for use in the `subgraph` package.
 
-```
-> truffle test --network subgraph test/subgraphDeployment.test.js
-...
-The rTOKEN contract (proxy) is deployed at: 0xc97EeFc57dD8E74A30AC2cC52E8785B40a14a30c
+```bash
+# Build and save the contracts
+yarn build
 ```
 
 #### Deploy the Subgraph
 
-Navigate back to this package and paste the contract address in `subgraph.yaml`. We are now ready to deploy our subgraph.
+Now in `rtoken-monorepo` navigate to `packages/subgraph` and paste the contract address in `subgraph.yaml`. We are ready to deploy our subgraph.
 
 ```bash
+# Copy the abis from packages/contracts and generate the subgraph schema
 yarn codegen
-yarn create-local  # Only run once
+
+# Create the subgraph node "rtoken-test" (only run once)
+yarn create-local
+
+# Deploy the subgraph to "rtoken-test" node
 yarn deploy-local
 ```
 
