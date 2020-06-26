@@ -1,5 +1,6 @@
 pragma solidity ^0.5.8;
 
+import {IERC20} from "./IRToken.sol";
 /**
  * @notice Allocation strategy for assets.
  *         - It invests the underlying assets into some yield generating contracts,
@@ -7,6 +8,11 @@ pragma solidity ^0.5.8;
  *         - Savings assets can be redeemed back to the underlying assets plus interest any time.
  */
 interface IAllocationStrategy {
+    /**
+     * @notice Set withdrawal address for tokens sent to contract
+     * @param account The account that can withdraw tokens
+     */
+    function setWithdrawAddress(address account) external;
 
     /**
      * @notice Underlying asset for the strategy
@@ -55,5 +61,13 @@ interface IAllocationStrategy {
      * @return uint256 underlyingAmount Amount of underlying redeemed
      */
     function redeemAll() external returns (uint256 savingsAmount, uint256 underlyingAmount);
+
+    /**
+     * @notice Owner redeems reward tokens sent to this contract.
+     * @dev Implementation should block the transfer of the investment assets such as the underlying asset or cTokens
+     * @param erc20 The address of the ERC20 token
+     * @return uint256 Amount of tokens held by this contract
+     */
+    function redeemArbitraryTokens(IERC20 erc20) external returns (uint256);
 
 }

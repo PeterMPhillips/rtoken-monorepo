@@ -101,6 +101,14 @@ contract RTokenStructs {
         /// @notice Savings internal accounting amount.
         ///         Debt is sold to buy savings
         uint256 sInternalAmount;
+
+        /// @notice Rewards owed to account. For distributing reward tokens
+        ///         earned on the loan via an incentive scheme, e.g. COMP
+        uint256 lRewardsOwed;
+        /// @notice The rewardsPerToken value from the last time rewards owed
+        ///         was calculated. This acts as a snapshot to calculate new
+        ///         rewards.
+        uint256 lRewardsPerToken;
     }
 
     /**

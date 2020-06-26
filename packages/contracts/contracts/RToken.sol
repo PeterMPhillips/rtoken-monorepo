@@ -11,6 +11,7 @@ import {Ownable} from "./Ownable.sol";
 import {LibraryLock} from "./LibraryLock.sol";
 import {SafeMath} from "@openzeppelin/contracts/math/SafeMath.sol";
 import {ReentrancyGuard} from "./ReentrancyGuard.sol";
+import {RTokenRewards} from "./RTokenRewards.sol";
 import {RTokenStructs} from "./RTokenStructs.sol";
 import {RTokenStorage} from "./RTokenStorage.sol";
 import {IERC20, IRToken} from "./IRToken.sol";
@@ -23,8 +24,7 @@ import {IAllocationStrategy} from "./IAllocationStrategy.sol";
 contract RToken is
     IRToken,
     IRTokenAdmin,
-    RTokenStorage,
-    Ownable,
+    RTokenRewards,
     Proxiable,
     LibraryLock,
     ReentrancyGuard {
@@ -520,6 +520,10 @@ contract RToken is
             accounts[src].rAmount >= tokens,
             "Not enough balance to transfer"
         );
+        Account storage srcAccount = accounts[src];
+        Account storage dstAccount = accounts[dst];
+        updateRewards(srcAccount);
+        updateRewards(dstAccount);
 
         /* Get the allowance, infinite for the account owner */
         uint256 startingAllowance = 0;
@@ -535,8 +539,8 @@ contract RToken is
 
         /* Do the calculations, checking for {under,over}flow */
         uint256 allowanceNew = startingAllowance.sub(tokens);
-        uint256 srcTokensNew = accounts[src].rAmount.sub(tokens);
-        uint256 dstTokensNew = accounts[dst].rAmount.add(tokens);
+        uint256 srcTokensNew = srcAccount.rAmount.sub(tokens);
+        uint256 dstTokensNew = dstAccount.rAmount.add(tokens);
 
         /* Eat some of the allowance (if necessary) */
         if (startingAllowance != MAX_UINT256) {
@@ -548,14 +552,14 @@ contract RToken is
         distributeLoans(dst, tokens, sInternalEstimated);
 
         // update token balances
-        accounts[src].rAmount = srcTokensNew;
-        accounts[dst].rAmount = dstTokensNew;
+        srcAccount.rAmount = srcTokensNew;
+        dstAccount.rAmount = dstTokensNew;
 
         // apply hat inheritance rule
-        if ((accounts[src].hatID != 0 &&
-            accounts[dst].hatID == 0 &&
-            accounts[src].hatID != SELF_HAT_ID)) {
-            changeHatInternal(dst, accounts[src].hatID);
+        if ((srcAccount.hatID != 0 &&
+            dstAccount.hatID == 0 &&
+            srcAccount.hatID != SELF_HAT_ID)) {
+            changeHatInternal(dst, srcAccount.hatID);
         }
 
         /* We emit a Transfer event */
@@ -574,6 +578,7 @@ contract RToken is
         );
 
         Account storage account = accounts[msg.sender];
+        updateRewards(account);
 
         // create saving assets
         require(token.transferFrom(msg.sender, address(this), mintAmount), "token transfer failed");
@@ -608,6 +613,7 @@ contract RToken is
             "Not enough balance to redeem"
         );
 
+        withdrawRewardsInternal(msg.sender); //Withdraw rewards before redeeming tokens (otherwise rewards will be lost)
         redeemAndRecollectLoans(msg.sender, redeemAmount);
 
         // update Account r balances and global statistics
@@ -896,6 +902,7 @@ contract RToken is
         uint256 interestAmount = getInterestPayableOf(account);
 
         if (interestAmount > 0) {
+            updateRewards(account);
             stats.cumulativeInterest = stats
                 .cumulativeInterest
                 .add(interestAmount);

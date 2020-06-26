@@ -10,9 +10,16 @@ contract CompoundAllocationStrategy is IAllocationStrategy, Ownable {
     CErc20Interface private cToken;
     IERC20 private token;
 
+    address public withdrawAddress;
+
     constructor(CErc20Interface cToken_) public {
         cToken = cToken_;
         token = IERC20(cToken.underlying());
+    }
+
+    function setWithdrawAddress(address account) external onlyOwner {
+      require(account != address(0));
+      withdrawAddress = account;
     }
 
     /// @dev ISavingStrategy.underlying implementation
@@ -64,6 +71,16 @@ contract CompoundAllocationStrategy is IAllocationStrategy, Ownable {
         require(cToken.redeem(savingsAmount) == 0, "cToken.redeem failed");
         underlyingAmount = token.balanceOf(address(this));
         token.transfer(msg.sender, underlyingAmount);
+    }
+
+    function redeemArbitraryTokens(IERC20 erc20) external
+      returns (uint256 tokenAmount) {
+      require(msg.sender == withdrawAddress, "msg.sender not withdrawAddress");
+      require(address(erc20) != address(token), "cannot redeem underlying token");
+      require(address(erc20) != address(cToken), "cannot redeem cToken");
+      tokenAmount = erc20.balanceOf(address(this));
+      require(tokenAmount > 0, "zero balance");
+      erc20.transfer(msg.sender, tokenAmount);
     }
 
 }
