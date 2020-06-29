@@ -102,6 +102,9 @@ contract RTokenStructs {
         ///         Debt is sold to buy savings
         uint256 sInternalAmount;
 
+
+        /// @notice Rewards address
+        address lRewardsAddress;
         /// @notice Rewards owed to account. For distributing reward tokens
         ///         earned on the loan via an incentive scheme, e.g. COMP
         uint256 lRewardsOwed;
@@ -109,6 +112,18 @@ contract RTokenStructs {
         ///         was calculated. This acts as a snapshot to calculate new
         ///         rewards.
         uint256 lRewardsPerToken;
+        /// @notice Stored interest fee for account
+        uint256 rInterestFee;
+    }
+
+    /// @dev Reward token stats
+    struct RewardsStatsStored {
+        /// @dev The current value each rToken has received in the reward token
+        uint256 rewardsPerToken;
+        /// @dev The amount of the reward token this contract has collected
+        uint256 rewardsCollected;
+        /// @dev The amount of the reward token that has been withdrawn from contract
+        uint256 rewardsWithdrawn;
     }
 
     /**

@@ -53,6 +53,12 @@ contract IRToken is RTokenStructs, IERC20 {
     // For external transactions
     ////////////////////////////////////////////////////////////////////////////
     /**
+     * @notice Set fee for percentage taken of the interest by admin
+     * @param fee The fee expressed as a percentage relative to 1e18. e.g. for 10%, fee = 1e17
+     */
+    function setInterestFee(uint256 fee) external;
+
+    /**
      * @notice Sender supplies assets into the market and receives rTokens in exchange
      * @param mintAmount The amount of the underlying asset to supply
      * @return bool true=success, otherwise a failure

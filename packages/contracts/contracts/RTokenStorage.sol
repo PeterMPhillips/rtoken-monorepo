@@ -51,4 +51,17 @@ contract RTokenStorage is RTokenStructs, IERC20 {
     mapping(address => AccountStatsStored) public accountStats;
     /// @dev HatStats mapping
     mapping(uint256 => HatStatsStored) public hatStats;
+    /// @dev Percentage of interest going to admin (formatted relative to 1e18)
+    uint256 public adminInterestFee;
+    /// @dev Percentage of rewards going to admin (formatted relative to 1e18)
+    uint256 public adminRewardsFee;
+    /// @dev Admin rewards fees that have accumulated
+    uint256 public adminRewards;
+    /// @dev The current rewards token, e.g. COMP
+    IERC20 public rewardsToken;
+    // @dev Stats on rewards tokens by address
+    mapping(address => RewardsStatsStored) public rewardStats;
+    mapping(bytes32 => uint256) public pastRewards;
+
+
 }

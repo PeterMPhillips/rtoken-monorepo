@@ -14,7 +14,8 @@ import {ReentrancyGuard} from "./ReentrancyGuard.sol";
 import {RTokenRewards} from "./RTokenRewards.sol";
 import {RTokenStructs} from "./RTokenStructs.sol";
 import {RTokenStorage} from "./RTokenStorage.sol";
-import {IERC20, IRToken} from "./IRToken.sol";
+import {IRToken} from "./IRToken.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IRTokenAdmin} from "./IRTokenAdmin.sol";
 import {IAllocationStrategy} from "./IAllocationStrategy.sol";
 
@@ -177,6 +178,13 @@ contract RToken is
     //
     // rToken interface
     //
+
+    /// @notice Set fee for percentage taken of the interest by admin
+    /// @param fee The fee expressed as a percentage relative to 1e18. e.g. for 10%, fee = 1e17
+    function setInterestFee(uint256 fee) external onlyOwner {
+        require(fee < 1e18);
+        adminInterestFee = fee;
+    }
 
     /// @dev IRToken.mint implementation
     function mint(uint256 mintAmount) external nonReentrant returns (bool) {
@@ -391,6 +399,13 @@ contract RToken is
             // Check RTokenStructs documentation for more info.
             stats.lRecipientsSum = gentleSub(stats.rAmount, stats.rInterest);
         } else {
+            if (account.rInterestFee > 0) {
+                stats.lRecipientsSum = gentleSub(
+                    stats.rAmount
+                        .mul(account.rInterestFee)
+                        .div(1e18),
+                    stats.rInterest);
+            }
             for (uint256 i = 0; i < hat.proportions.length; ++i) {
                 stats.lRecipientsSum += account.lRecipients[hat.recipients[i]];
             }
@@ -522,8 +537,8 @@ contract RToken is
         );
         Account storage srcAccount = accounts[src];
         Account storage dstAccount = accounts[dst];
-        updateRewards(srcAccount);
-        updateRewards(dstAccount);
+        //updateRewards(srcAccount);
+        //updateRewards(dstAccount);
 
         /* Get the allowance, infinite for the account owner */
         uint256 startingAllowance = 0;
@@ -578,7 +593,7 @@ contract RToken is
         );
 
         Account storage account = accounts[msg.sender];
-        updateRewards(account);
+        //updateRewards(account);
 
         // create saving assets
         require(token.transferFrom(msg.sender, address(this), mintAmount), "token transfer failed");
@@ -728,18 +743,38 @@ contract RToken is
         Hat storage hat = hats[account.hatID == SELF_HAT_ID
             ? 0
             : account.hatID];
+
+        uint256 rAmountSkimmed = rAmount;
+        uint256 sInternalAmountSkimmed = sInternalAmount;
+        // Loan percentage to admin to earn interest
+        if (adminInterestFee > 0 || account.rInterestFee > 0) {
+          if(account.rInterestFee == 0) {
+            account.rInterestFee = adminInterestFee;
+          }
+          updateRewards(_owner);
+          uint256 rFee = rAmount.mul(account.rInterestFee).div(1e18);
+          uint256 sInternalFee = sInternalAmount.mul(account.rInterestFee).div(1e18);
+          Account storage adminAccount = accounts[_owner];
+          adminAccount.lDebt = adminAccount.lDebt.add(rFee);
+          adminAccount.sInternalAmount = adminAccount.sInternalAmount.add(sInternalFee);
+          _updateLoanStats(owner, _owner, account.hatID, true, rFee, sInternalFee);
+          rAmountSkimmed = gentleSub(rAmount, rFee);
+          sInternalAmountSkimmed = gentleSub(sInternalAmount, sInternalFee);
+        }
+
         uint256 i;
         if (hat.recipients.length > 0) {
-            uint256 rLeft = rAmount;
-            uint256 sInternalLeft = sInternalAmount;
+            uint256 rLeft = rAmountSkimmed;
+            uint256 sInternalLeft = sInternalAmountSkimmed;
             for (i = 0; i < hat.proportions.length; ++i) {
+                updateRewards(hat.recipients[i]);
                 Account storage recipientAccount = accounts[hat.recipients[i]];
                 bool isLastRecipient = i == (hat.proportions.length - 1);
 
                 // calculate the loan amount of the recipient
                 uint256 lDebtRecipient = isLastRecipient
                     ? rLeft
-                    : (rAmount.mul(hat.proportions[i])) / PROPORTION_BASE;
+                    : (rAmountSkimmed.mul(hat.proportions[i])) / PROPORTION_BASE;
                 // distribute the loan to the recipient
                 account.lRecipients[hat.recipients[i]] = account.lRecipients[hat.recipients[i]]
                     .add(lDebtRecipient);
@@ -754,6 +789,7 @@ contract RToken is
                     : (sInternalAmount.mul(hat.proportions[i])) / PROPORTION_BASE;
                 recipientAccount.sInternalAmount = recipientAccount.sInternalAmount
                     .add(sInternalAmountRecipient);
+
                 // remaining value adjustments
                 sInternalLeft = gentleSub(sInternalLeft, sInternalAmountRecipient);
 
@@ -761,11 +797,11 @@ contract RToken is
             }
         } else {
             // Account uses the zero/self hat, give all interest to the owner
-            account.lDebt = account.lDebt.add(rAmount);
+            updateRewards(owner);
+            account.lDebt = account.lDebt.add(rAmountSkimmed);
             account.sInternalAmount = account.sInternalAmount
-                .add(sInternalAmount);
-
-            _updateLoanStats(owner, owner, account.hatID, true, rAmount, sInternalAmount);
+                .add(sInternalAmountSkimmed);
+            _updateLoanStats(owner, owner, account.hatID, true, rAmountSkimmed, sInternalAmountSkimmed);
         }
     }
 
@@ -829,22 +865,35 @@ contract RToken is
         if (debtToCollect > rAmount) {
             debtToCollect = rAmount;
         }
-        uint256 sInternalToCollect = rToSInternal(debtToCollect);
+        uint256 debtToCollectSkimmed = debtToCollect;
+        if (account.rInterestFee > 0) {
+            updateRewards(_owner);
+            uint256 rFee = debtToCollect.mul(account.rInterestFee).div(1e18);
+            uint256 sInternalFee = rToSInternal(rFee);
+            Account storage adminAccount = accounts[_owner];
+            adminAccount.lDebt = gentleSub(adminAccount.lDebt, rFee);
+            adminAccount.sInternalAmount = gentleSub(adminAccount.sInternalAmount, sInternalFee);
+            adjustRInterest(adminAccount);
+            _updateLoanStats(owner, _owner, account.hatID, false, rFee, sInternalFee);
+            debtToCollectSkimmed = gentleSub(debtToCollect, rFee);
+        }
+        uint256 sInternalToCollect = rToSInternal(debtToCollectSkimmed);
         if (hat.recipients.length > 0) {
             uint256 rLeft = 0;
             uint256 sInternalLeft = 0;
             uint256 i;
             // adjust recipients' debt and savings
-            rLeft = debtToCollect;
+            rLeft = debtToCollectSkimmed;
             sInternalLeft = sInternalToCollect;
             for (i = 0; i < hat.proportions.length; ++i) {
+                updateRewards(hat.recipients[i]);
                 Account storage recipientAccount = accounts[hat.recipients[i]];
                 bool isLastRecipient = i == (hat.proportions.length - 1);
 
                 // calulate loans to be collected from the recipient
                 uint256 lDebtRecipient = isLastRecipient
                     ? rLeft
-                    : (debtToCollect.mul(hat.proportions[i])) / PROPORTION_BASE;
+                    : (debtToCollectSkimmed.mul(hat.proportions[i])) / PROPORTION_BASE;
                 recipientAccount.lDebt = gentleSub(
                     recipientAccount.lDebt,
                     lDebtRecipient);
@@ -865,21 +914,20 @@ contract RToken is
                 sInternalLeft = gentleSub(sInternalLeft, sInternalAmountRecipient);
 
                 adjustRInterest(recipientAccount);
-
                 _updateLoanStats(owner, hat.recipients[i], account.hatID, false, lDebtRecipient, sInternalAmountRecipient);
             }
         } else {
             // Account uses the zero hat, recollect interests from the owner
 
+            // update account rewards
+            updateRewards(owner);
             // collect debt from self hat
-            account.lDebt = gentleSub(account.lDebt, debtToCollect);
+            account.lDebt = gentleSub(account.lDebt, debtToCollectSkimmed);
 
             // collect savings
             account.sInternalAmount = gentleSub(account.sInternalAmount, sInternalToCollect);
-
             adjustRInterest(account);
-
-            _updateLoanStats(owner, owner, account.hatID, false, debtToCollect, sInternalToCollect);
+            _updateLoanStats(owner, owner, account.hatID, false, debtToCollectSkimmed, sInternalToCollect);
         }
 
         // debt-free portion of internal savings needs to be collected too
@@ -887,6 +935,11 @@ contract RToken is
             sInternalToCollect = rToSInternal(rAmount - debtToCollect);
             account.sInternalAmount = gentleSub(account.sInternalAmount, sInternalToCollect);
             adjustRInterest(account);
+        }
+
+        // reset stored interest fee to zero if entire account is being recollected
+        if (rAmount == account.rAmount) {
+            account.rInterestFee = 0;
         }
     }
 
@@ -902,7 +955,7 @@ contract RToken is
         uint256 interestAmount = getInterestPayableOf(account);
 
         if (interestAmount > 0) {
-            updateRewards(account);
+            updateRewards(owner);
             stats.cumulativeInterest = stats
                 .cumulativeInterest
                 .add(interestAmount);

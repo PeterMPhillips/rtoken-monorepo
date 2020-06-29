@@ -1,6 +1,6 @@
 pragma solidity ^0.5.8;
 
-import {IERC20} from "./IRToken.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /**
  * @notice Allocation strategy for assets.
  *         - It invests the underlying assets into some yield generating contracts,
