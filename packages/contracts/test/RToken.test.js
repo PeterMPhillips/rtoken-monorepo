@@ -2012,7 +2012,7 @@ contract("RToken", accounts => {
 
         // build a sombrero
         const sombrero = { addresses: [], proportions: []};
-        for (let i = 1; i <= 50; ++i) {
+        for (let i = 1; i <= 40; ++i) {
             sombrero.addresses.push(`0x${i}00fdf4076b8f3a5357c5e395ab970b5b54098fef`.substr(0, 42));
             sombrero.proportions.push(1);
         }

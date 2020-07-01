@@ -37,7 +37,7 @@ contract RToken is
     uint256 public constant MAX_UINT256 = uint256(int256(-1));
     uint256 public constant SELF_HAT_ID = MAX_UINT256;
     uint32 public constant PROPORTION_BASE = 0xFFFFFFFF;
-    uint256 public constant MAX_NUM_HAT_RECIPIENTS = 50;
+    uint256 public constant MAX_NUM_HAT_RECIPIENTS = 40;
 
     /**
      * @notice Create rToken linked with cToken at `cToken_`
@@ -271,6 +271,7 @@ contract RToken is
     ) external nonReentrant returns (uint256 hatID) {
         hatID = createHatInternal(recipients, proportions);
         if (doChangeHat) {
+            payInterestInternal(msg.sender);
             changeHatInternal(msg.sender, hatID);
         }
     }
@@ -400,11 +401,9 @@ contract RToken is
             stats.lRecipientsSum = gentleSub(stats.rAmount, stats.rInterest);
         } else {
             if (account.rInterestFee > 0) {
-                stats.lRecipientsSum = gentleSub(
-                    stats.rAmount
-                        .mul(account.rInterestFee)
-                        .div(1e18),
-                    stats.rInterest);
+                stats.lRecipientsSum = stats.rAmount
+                    .mul(account.rInterestFee)
+                    .div(1e18);
             }
             for (uint256 i = 0; i < hat.proportions.length; ++i) {
                 stats.lRecipientsSum += account.lRecipients[hat.recipients[i]];
@@ -696,6 +695,7 @@ contract RToken is
         HatStatsStored storage oldHatStats = hatStats[oldHatID];
         HatStatsStored storage newHatStats = hatStats[hatID];
         if (account.rAmount > 0) {
+            adjustRInterest(account);
             uint256 sInternalEstimated = estimateAndRecollectLoans(owner, account.rAmount);
             account.hatID = hatID;
             distributeLoans(owner, account.rAmount, sInternalEstimated);
@@ -786,7 +786,7 @@ contract RToken is
                 // calculate the savings holdings of the recipient
                 uint256 sInternalAmountRecipient = isLastRecipient
                     ? sInternalLeft
-                    : (sInternalAmount.mul(hat.proportions[i])) / PROPORTION_BASE;
+                    : (sInternalAmountSkimmed.mul(hat.proportions[i])) / PROPORTION_BASE;
                 recipientAccount.sInternalAmount = recipientAccount.sInternalAmount
                     .add(sInternalAmountRecipient);
 
@@ -803,6 +803,7 @@ contract RToken is
                 .add(sInternalAmountSkimmed);
             _updateLoanStats(owner, owner, account.hatID, true, rAmountSkimmed, sInternalAmountSkimmed);
         }
+
     }
 
     /**

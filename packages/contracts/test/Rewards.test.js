@@ -9,6 +9,7 @@ const { time, expectRevert } = require("@openzeppelin/test-helpers");
 const { web3tx, wad4human, toWad } = require("@decentral.ee/web3-test-helpers");
 
 contract("RTokenRewards", accounts => {
+    const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
     const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
     const FEE = 0.1;
 
@@ -89,10 +90,22 @@ contract("RTokenRewards", accounts => {
         await web3tx(compoundAS.transferOwnership, "compoundAS.transferOwnership")(rToken.address);
     });
 
+    function zeroHatUseCount(u) {
+        return web3.utils.toBN(MAX_UINT256).sub(web3.utils.toBN(u)).toString();
+    }
+
     function parseGlobalStats({totalSupply, totalSavingsAmount}) {
         return {
             totalSupply: wad4human(totalSupply),
             totalSavingsAmount: wad4human(totalSavingsAmount)
+        };
+    }
+
+    function parseHatStats({useCount, totalLoans, totalSavings}) {
+        return {
+            useCount,
+            totalLoans: wad4human(totalLoans),
+            totalSavings: wad4human(totalSavings)
         };
     }
 
@@ -150,7 +163,7 @@ contract("RTokenRewards", accounts => {
     async function waitForInterest(nBlocks = 100) {
         console.log(`Wait for ${nBlocks} blocks...`);
         while(--nBlocks) await time.advanceBlock();
-        await web3tx(cToken.accrueInterest, "cToken.accrueInterest")({ from: admin });
+        await web3tx(cToken.accrueInterest, "cToken.accrueInterest")({ from: customer3 });
     }
 
     async function expectAccount(account, balances, decimals) {
@@ -536,6 +549,7 @@ contract("RTokenRewards", accounts => {
         });
         await web3tx(rToken.mint, "rToken.mint 100 to customer1")(toWad(100), { from: customer1 });
         assert.equal(wad4human(await token.balanceOf.call(customer1)), "900.00000");
+
         await expectAccount(customer1, {
             tokenBalance: "100.00000",
             cumulativeInterest: "0.00000",
@@ -550,7 +564,16 @@ contract("RTokenRewards", accounts => {
             receivedSavings: "10.00000",
             interestPayable: "0.00000",
         });
+
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(0),
+            totalLoans: "100.00000",
+            totalSavings: "100.00000",
+        });
+
         await doBingeBorrowing();
+
         await expectAccount(customer1, {
             tokenBalance: "100.00000",
             cumulativeInterest: "0.00000",
@@ -565,8 +588,17 @@ contract("RTokenRewards", accounts => {
             receivedSavings: "10.00010",
             interestPayable: "0.00010",
         });
+
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(0),
+            totalLoans: "100.00000",
+            totalSavings: "100.00100",
+        });
+
         await web3tx(rToken.redeem, "rToken.redeem 90 to customer1")(toWad(90), { from: customer1 });
         assert.equal(wad4human(await token.balanceOf.call(customer1)), "990.00000");
+
         await expectAccount(customer1, {
             tokenBalance: "10.00091",
             cumulativeInterest: "0.00091",
@@ -582,55 +614,126 @@ contract("RTokenRewards", accounts => {
             interestPayable: "0.00010",
         });
 
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(0),
+            totalLoans: "10.00000",
+            totalSavings: "10.00101",
+        });
+
         await web3tx(rToken.createHat, "rToken.createHat benefiting customer1(90%) and customer2(10%)")(
             [customer1, customer2], [90, 10], true, { from: customer1 });
 
         await expectAccount(customer1, {
-            tokenBalance: "10.00091",
-            cumulativeInterest: "0.00091",
-            receivedLoan: "8.10074", //10.00086
-            receivedSavings: "9.00091",
-            interestPayable: "0.90008",
+            tokenBalance: "10.00100",
+            cumulativeInterest: "0.00100",
+            receivedLoan: "8.10081", //10.00086
+            receivedSavings: "8.10081",
+            interestPayable: "0.00000",
         });
         await expectAccount(customer2, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
-            receivedLoan: "0.90008",
-            receivedSavings: "0.00000",
+            receivedLoan: "0.90009",
+            receivedSavings: "0.90009",
             interestPayable: "0.00000",
         });
         await expectAccount(admin, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
-            receivedLoan: "1.00009",
-            receivedSavings: "1.00020",
+            receivedLoan: "1.00010",
+            receivedSavings: "1.00021",
             interestPayable: "0.00011",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "1",
+            totalLoans: "10.00100",
+            totalSavings: "10.00100",
         });
 
         await waitForInterest();
 
         await expectAccount(customer1, {
-            tokenBalance: "10.00091",
-            cumulativeInterest: "0.00091",
-            receivedLoan: "8.10074", //10.00086
-            receivedSavings: "9.00991",
-            interestPayable: "0.90908",
+            tokenBalance: "10.00100",
+            cumulativeInterest: "0.00100",
+            receivedLoan: "8.10081", //10.00086
+            receivedSavings: "8.10891",
+            interestPayable: "0.00810",
         });
         await expectAccount(customer2, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
-            receivedLoan: "0.90008",
-            receivedSavings: "0.00000",
-            interestPayable: "0.00000",
+            receivedLoan: "0.90009",
+            receivedSavings: "0.90099",
+            interestPayable: "0.00090",
         });
         await expectAccount(admin, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
-            receivedLoan: "1.00009",
-            receivedSavings: "1.00120",
+            receivedLoan: "1.00010",
+            receivedSavings: "1.00121",
             interestPayable: "0.00111",
         });
 
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "1",
+            totalLoans: "10.00100",
+            totalSavings: "10.01100",
+        });
+
+        await web3tx(rToken.createHat, "rToken.createHat benefiting customer1(80%) and customer3(20%)")(
+            [customer1, customer3], [80, 20], true, { from: customer1 });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "0",
+            totalLoans: "0.00000",
+            totalSavings: "0.01010",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(2)), {
+            useCount: "1",
+            totalLoans: "10.00918",
+            totalSavings: "10.00918",
+        });
+
+        await waitForInterest();
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "0",
+            totalLoans: "0.00000",
+            totalSavings: "0.01011",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(2)), {
+            useCount: "1",
+            totalLoans: "10.00918",
+            totalSavings: "10.01919",
+        });
     });
 
     it("#3 normal operations without interest fees", async () => {
@@ -639,6 +742,7 @@ contract("RTokenRewards", accounts => {
         });
         await web3tx(rToken.mint, "rToken.mint 100 to customer1")(toWad(100), { from: customer1 });
         assert.equal(wad4human(await token.balanceOf.call(customer1)), "900.00000");
+
         await expectAccount(customer1, {
             tokenBalance: "100.00000",
             cumulativeInterest: "0.00000",
@@ -653,7 +757,16 @@ contract("RTokenRewards", accounts => {
             receivedSavings: "0.00000",
             interestPayable: "0.00000",
         });
+
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(0),
+            totalLoans: "100.00000",
+            totalSavings: "100.00000",
+        });
+
         await doBingeBorrowing();
+
         await expectAccount(customer1, {
             tokenBalance: "100.00000",
             cumulativeInterest: "0.00000",
@@ -668,8 +781,16 @@ contract("RTokenRewards", accounts => {
             receivedSavings: "0.00000",
             interestPayable: "0.00000",
         });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(0),
+            totalLoans: "100.00000",
+            totalSavings: "100.00100",
+        });
+
         await web3tx(rToken.redeem, "rToken.redeem 90 to customer1")(toWad(90), { from: customer1 });
         assert.equal(wad4human(await token.balanceOf.call(customer1)), "990.00000");
+
         await expectAccount(customer1, {
             tokenBalance: "10.00101",
             cumulativeInterest: "0.00101",
@@ -685,22 +806,27 @@ contract("RTokenRewards", accounts => {
             interestPayable: "0.00000",
         });
 
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(0),
+            totalLoans: "10.00000",
+            totalSavings: "10.00101",
+        });
         await web3tx(rToken.createHat, "rToken.createHat benefiting customer1(90%) and customer2(10%)")(
             [customer1, customer2], [90, 10], true, { from: customer1 });
 
         await expectAccount(customer1, {
-            tokenBalance: "10.00101",
-            cumulativeInterest: "0.00086",
-            receivedLoan: "10.00111", //10.00086
-            receivedSavings: "10.00111",
+            tokenBalance: "10.00111",
+            cumulativeInterest: "0.00111",
+            receivedLoan: "9.00100", //10.00086
+            receivedSavings: "9.00100",
             interestPayable: "0.00000",
         });
 
         await expectAccount(customer2, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
-            receivedLoan: "1.00010",
-            receivedSavings: "1.00010",
+            receivedLoan: "1.00011",
+            receivedSavings: "1.00011",
             interestPayable: "0.00000",
         });
 
@@ -710,30 +836,77 @@ contract("RTokenRewards", accounts => {
             receivedLoan: "0.00000",
             receivedSavings: "0.00000",
             interestPayable: "0.00000",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "1",
+            totalLoans: "10.00111",
+            totalSavings: "10.00111",
         });
 
         await waitForInterest();
 
         await expectAccount(customer1, {
-            tokenBalance: "10.00091",
-            cumulativeInterest: "0.00091",
-            receivedLoan: "9.00086",
-            receivedSavings: "10.01111",
-            interestPayable: "0.91019",
+            tokenBalance: "10.00111",
+            cumulativeInterest: "0.00111",
+            receivedLoan: "9.00100",
+            receivedSavings: "9.01000",
+            interestPayable: "0.00900",
         });
+
         await expectAccount(customer2, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
-            receivedLoan: "1.00009",
-            receivedSavings: "0.00000",
-            interestPayable: "0.00000",
+            receivedLoan: "1.00011",
+            receivedSavings: "1.00111",
+            interestPayable: "0.00100",
         });
+
         await expectAccount(admin, {
             tokenBalance: "0.00000",
             cumulativeInterest: "0.00000",
             receivedLoan: "0.00000",
             receivedSavings: "0.00000",
             interestPayable: "0.00000",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "1",
+            totalLoans: "10.00111",
+            totalSavings: "10.01111",
+        });
+
+        await web3tx(rToken.createHat, "rToken.createHat benefiting customer1(80%) and customer3(20%)")(
+            [customer1, customer3], [80, 20], true, { from: customer1 });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(0)), {
+            useCount: zeroHatUseCount(1),
+            totalLoans: "0.00000",
+            totalSavings: "0.00111",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(1)), {
+            useCount: "0",
+            totalLoans: "0.00000",
+            totalSavings: "0.01010",
+        });
+
+        assert.deepEqual(parseHatStats(await rToken.getHatStats(2)), {
+            useCount: "1",
+            totalLoans: "10.01020",
+            totalSavings: "10.01020",
         });
     });
 });
