@@ -534,10 +534,6 @@ contract RToken is
             accounts[src].rAmount >= tokens,
             "Not enough balance to transfer"
         );
-        Account storage srcAccount = accounts[src];
-        Account storage dstAccount = accounts[dst];
-        //updateRewards(srcAccount);
-        //updateRewards(dstAccount);
 
         /* Get the allowance, infinite for the account owner */
         uint256 startingAllowance = 0;
@@ -553,8 +549,8 @@ contract RToken is
 
         /* Do the calculations, checking for {under,over}flow */
         uint256 allowanceNew = startingAllowance.sub(tokens);
-        uint256 srcTokensNew = srcAccount.rAmount.sub(tokens);
-        uint256 dstTokensNew = dstAccount.rAmount.add(tokens);
+        uint256 srcTokensNew = accounts[src].rAmount.sub(tokens);
+        uint256 dstTokensNew = accounts[dst].rAmount.add(tokens);
 
         /* Eat some of the allowance (if necessary) */
         if (startingAllowance != MAX_UINT256) {
@@ -566,14 +562,14 @@ contract RToken is
         distributeLoans(dst, tokens, sInternalEstimated);
 
         // update token balances
-        srcAccount.rAmount = srcTokensNew;
-        dstAccount.rAmount = dstTokensNew;
+        accounts[src].rAmount = srcTokensNew;
+        accounts[dst].rAmount = dstTokensNew;
 
         // apply hat inheritance rule
-        if ((srcAccount.hatID != 0 &&
-            dstAccount.hatID == 0 &&
-            srcAccount.hatID != SELF_HAT_ID)) {
-            changeHatInternal(dst, srcAccount.hatID);
+        if ((accounts[src].hatID != 0 &&
+            accounts[dst].hatID == 0 &&
+            accounts[src].hatID != SELF_HAT_ID)) {
+            changeHatInternal(dst, accounts[src].hatID);
         }
 
         /* We emit a Transfer event */
@@ -695,7 +691,6 @@ contract RToken is
         HatStatsStored storage oldHatStats = hatStats[oldHatID];
         HatStatsStored storage newHatStats = hatStats[hatID];
         if (account.rAmount > 0) {
-            adjustRInterest(account);
             uint256 sInternalEstimated = estimateAndRecollectLoans(owner, account.rAmount);
             account.hatID = hatID;
             distributeLoans(owner, account.rAmount, sInternalEstimated);
